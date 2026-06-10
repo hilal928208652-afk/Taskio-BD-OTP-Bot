@@ -42,7 +42,7 @@ from telegram.error import TelegramError
 # ══════════════════════════════════════════════════════════════════
 #  CONFIGURATION
 # ══════════════════════════════════════════════════════════════════
-BOT_TOKEN = "8864309163:AAHgYujB_y-yTtosT2bw8cskk4EFvkiK584"
+BOT_TOKEN = "8679974247:AAFQD5ozSf3D5oXay02_R1UEu41VYrYUzBI"
 MAPIKEY   = "ZNX_AA17NFTNRW9LZOETYOOB2P9Z"
 ADMIN_IDS = {6488766623}
 
