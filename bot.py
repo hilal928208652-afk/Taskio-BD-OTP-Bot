@@ -57,7 +57,7 @@ SUPPORT_URL   = f"https://t.me/{SUPPORT_USER}"
 WEB_STORE_URL = "https://taskiobd.top/insta_v2.php"
 
 # ⚠️ আপনার Supabase Project Settings > Database থেকে Connection String (URI) এখানে বসান
-SUPABASE_DATABASE_URL = "postgresql://postgres:[YOUR_PASSWORD]@[YOUR_PROJECT_ID].supabase.co:5432/postgres"
+SUPABASE_DATABASE_URL = "postgresql://postgres:!1@2#3$4%5Qa@@db.awagkwgskbdmwrlgbwgs.supabase.co:5432/postgres"
 
 # ══════════════════════════════════════════════════════════════════
 #  LOGGING & UTILS
