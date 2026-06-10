@@ -18,6 +18,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
 import httpx
+from aiohttp import web
 
 # TELEGRAM CORE IMPORTS
 from telegram import (
@@ -42,7 +43,7 @@ from telegram.error import TelegramError
 # ══════════════════════════════════════════════════════════════════
 #  CONFIGURATION
 # ══════════════════════════════════════════════════════════════════
-BOT_TOKEN = "8544187712:AAHBloeMpw0qKOJc9opSOnh91PLLGcIL6Ew"
+BOT_TOKEN = "8679974247:AAFQD5ozSf3D5oXay02_R1UEu41VYrYUzBI"
 MAPIKEY   = "ZNX_AA17NFTNRW9LZOETYOOB2P9Z"
 ADMIN_IDS = {6488766623}
 
@@ -1236,22 +1237,16 @@ async def error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Unhandled exception: %s", ctx.error, exc_info=ctx.error)
 
 # ══════════════════════════════════════════════════════════════════
-#  APPLICATION LIFECYCLE (POOL MANAGEMENT)
+#  APPLICATION LIFECYCLE (POOL MANAGEMENT) – USED BY BOTH MODES
 # ══════════════════════════════════════════════════════════════════
-async def post_init(app: Application) -> None:
+async def on_startup(app: Application):
     global _db_pool
     app.bot_data["http_client"] = httpx.AsyncClient(headers=API_HEADERS, timeout=15.0)
-    
-    # Supabase কানেকশন পুল ইনিশিয়েট করা
-    _db_pool = await asyncpg.create_pool(
-        dsn=SUPABASE_DATABASE_URL,
-        min_size=2,
-        max_size=10
-    )
+    _db_pool = await asyncpg.create_pool(dsn=SUPABASE_DATABASE_URL, min_size=2, max_size=10)
     await init_db(_db_pool)
     logger.info("🚀 Taskio BD Pro Cloud Engine Online — Connected to Supabase ✅")
 
-async def post_shutdown(app: Application) -> None:
+async def on_shutdown(app: Application):
     global _db_pool
     logger.info("🛑 Shutdown — cancelling tasks...")
     for tasks in _active_tasks.values():
@@ -1264,20 +1259,54 @@ async def post_shutdown(app: Application) -> None:
     logger.info("✅ Shutdown complete.")
 
 # ══════════════════════════════════════════════════════════════════
-#  ENTRY POINT
+#  ENTRY POINT – AUTO-DETECT POLLING vs WEBHOOK
 # ══════════════════════════════════════════════════════════════════
 def main() -> None:
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
+    bot_app = Application.builder().token(BOT_TOKEN).post_init(on_startup).post_shutdown(on_shutdown).build()
     
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("menu",  cmd_start))
-    app.add_handler(CommandHandler("admin", cmd_admin))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
-    app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_error_handler(error_handler)
+    bot_app.add_handler(CommandHandler("start", cmd_start))
+    bot_app.add_handler(CommandHandler("menu",  cmd_start))
+    bot_app.add_handler(CommandHandler("admin", cmd_admin))
+    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
+    bot_app.add_handler(CallbackQueryHandler(callback_handler))
+    bot_app.add_error_handler(error_handler)
 
-    logger.info("🤖 Bot polling started…")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if webhook_url:
+        # --- Webhook mode (Render Web Service) ---
+        port = int(os.getenv("PORT", "8080"))
+        logger.info(f"🤖 Starting webhook on port {port} -> {webhook_url}")
+
+        # Create aiohttp web app and route
+        aiohttp_app = web.Application()
+        aiohttp_app.router.add_post("/webhook", lambda request: bot_app.update_queue.put(request.json()))
+
+        async def start_webhook():
+            await bot_app.initialize()
+            await bot_app.bot.set_webhook(url=f"{webhook_url}/webhook")
+            runner = web.AppRunner(aiohttp_app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", port)
+            await site.start()
+            logger.info("Webhook is listening...")
+            # Keep running until signal
+            while True:
+                await asyncio.sleep(3600)
+
+        async def stop_webhook():
+            await bot_app.bot.delete_webhook()
+            await bot_app.shutdown()
+            logger.info("Webhook stopped.")
+
+        try:
+            asyncio.run(start_webhook())
+        except KeyboardInterrupt:
+            asyncio.run(stop_webhook())
+
+    else:
+        # --- Polling mode (local dev / Worker) ---
+        logger.info("🤖 Bot polling started…")
+        bot_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
